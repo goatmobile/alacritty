@@ -1259,7 +1259,7 @@ impl Processor {
                     scheduler.unschedule_window(window_context.id());
 
                     // Shutdown if no more terminals are open.
-                    if self.windows.is_empty() {
+                    if !self.cli_options.daemon && self.windows.is_empty() {
                         // Write ref tests of last window to disk.
                         if self.config.debug.ref_test {
                             window_context.write_ref_test_results();

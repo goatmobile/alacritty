@@ -69,6 +69,11 @@ pub struct Options {
     #[clap(flatten)]
     pub window_options: WindowOptions,
 
+    /// Run in daemon mode (loop but create no windows until a CreateWindow
+    /// message is recieved via the IPC socket)
+    #[clap(long)]
+    pub daemon: bool,
+
     /// Subcommand passed to the CLI.
     #[cfg(unix)]
     #[clap(subcommand)]
