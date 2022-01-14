@@ -23,6 +23,8 @@ use glutin::event_loop::EventLoop as GlutinEventLoop;
 use log::info;
 #[cfg(windows)]
 use winapi::um::wincon::{AttachConsole, FreeConsole, ATTACH_PARENT_PROCESS};
+use rdev;
+use std::thread;
 
 use alacritty_terminal::tty;
 
@@ -73,6 +75,34 @@ fn main() {
     // Load command line options.
     let options = Options::new();
 
+    // This will block.
+    println!("Spawning thread");
+    // thread::spawn(|| {
+    println!("Listening...");
+    // if let Err(error) = rdev::listen(callback) {
+    //     println!("Error: {:?}", error)
+    // }
+    // This will block.
+    if let Err(error) = rdev::listen(callback) {
+            println!("Error: {:?}", error)
+    }
+
+    fn callback2(event: rdev::Event) {
+        println!("My callback {:?}", event);
+        // thread::spawn(|| {
+            println!("RUNNING WINDOW");
+            let options = Options::new();
+            let result = alacritty(options);
+                
+        // });
+        // match event.name {
+        //     Some(string) => println!("User wrote {:?}", string),
+        //     None => (),
+        // }
+    }
+    // });
+    println!("Spawned thread");
+
     #[cfg(unix)]
     let result = match options.subcommands {
         Some(Subcommands::Msg(options)) => msg(options),
@@ -121,6 +151,96 @@ impl Drop for TemporaryFiles {
     }
 }
 
+pub struct Listener {
+    shift: bool,
+    quote: bool,
+    meta: bool,
+}
+
+impl Listener {
+    fn check(&mut self) -> bool{
+        if self.shift && self.quote && self.meta {
+            return true;
+        }
+        return false;
+    }
+}
+use std::cell::RefCell;
+
+thread_local!(pub static l: RefCell<Listener> = RefCell::new({ Listener {
+    quote: false,
+    shift: false,
+    meta: false,
+}}));
+
+
+fn callback(event: rdev::Event) {
+    let open = match event.event_type {
+        rdev::EventType::KeyPress(rdev::Key::ShiftLeft) => {
+            l.with(|listener| {
+                listener.borrow_mut().shift = true;
+                let r = listener.borrow_mut().check();
+                return r;
+            })
+        },
+        rdev::EventType::KeyPress(rdev::Key::Quote) => {
+            l.with(|listener| {
+                listener.borrow_mut().quote = true;
+                let r = listener.borrow_mut().check();
+                return r;
+            })
+        },
+        rdev::EventType::KeyPress(rdev::Key::MetaRight) => {
+            l.with(|listener| {
+                listener.borrow_mut().meta = true;
+                let r = listener.borrow_mut().check();
+                return r;
+            })
+        },
+        rdev::EventType::KeyPress(rdev::Key::MetaLeft) => {
+            l.with(|listener| {
+                listener.borrow_mut().meta = true;
+                let r = listener.borrow_mut().check();
+                return r;
+            })
+        },
+        rdev::EventType::KeyRelease(rdev::Key::ShiftLeft) => {
+            l.with(|listener| {
+                listener.borrow_mut().shift = false;
+                let r = listener.borrow_mut().check();
+                return r;
+            })
+        },
+        rdev::EventType::KeyRelease(rdev::Key::Quote) => {
+            l.with(|listener| {
+                listener.borrow_mut().quote = false;
+                let r = listener.borrow_mut().check();
+                return r;
+            })
+        },
+        rdev::EventType::KeyRelease(rdev::Key::MetaLeft) => {
+            l.with(|listener| {
+                listener.borrow_mut().meta = false;
+                let r = listener.borrow_mut().check();
+                return r;
+            })
+        },
+        rdev::EventType::KeyRelease(rdev::Key::MetaRight) => {
+            l.with(|listener| {
+                listener.borrow_mut().meta = false;
+                let r = listener.borrow_mut().check();
+                return r;
+            })
+        },
+        _ => false,
+    };
+    if open {
+        let options = Options::new();
+        alacritty(options);
+    }
+}
+
+
 /// Run main Alacritty entrypoint.
 ///
 /// Creates a window, the terminal state, PTY, I/O event loop, input processor,
@@ -130,10 +250,6 @@ fn alacritty(options: Options) -> Result<(), String> {
 
     // Setup glutin event loop.
     let window_event_loop = GlutinEventLoop::<Event>::with_user_event();
-
-    // Initialize the logger as soon as possible as to capture output from other subsystems.
-    let log_file = logging::initialize(&options, window_event_loop.create_proxy())
-        .expect("Unable to initialize logger");
 
     // Load configuration file.
     let config = config::load(&options);
@@ -169,14 +285,6 @@ fn alacritty(options: Options) -> Result<(), String> {
         None
     };
 
-    // Setup automatic RAII cleanup for our files.
-    let log_cleanup = log_file.filter(|_| !config.debug.persistent_logging);
-    let _files = TemporaryFiles {
-        #[cfg(unix)]
-        socket_path,
-        log_file: log_cleanup,
-    };
-
     // Event processor.
     let window_options = options.window_options.clone();
     let is_daemon = options.daemon;
@@ -191,6 +299,7 @@ fn alacritty(options: Options) -> Result<(), String> {
     }
 
     info!("Initialisation complete");
+    println!("Running loop");
 
     // Start event loop and block until shutdown.
     processor.run(window_event_loop);
